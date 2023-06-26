@@ -1,5 +1,5 @@
-import test_scraper as modules
+import functions
 
 
 url = input('Please enter the URL of the document or TOC of the document to be translated.')
-modules.scrape_document(url)
+functions.scrape_document(url)
