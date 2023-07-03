@@ -4,7 +4,6 @@ from re import sub
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 from langid import classify as langid_classify
-from pypinyin import pinyin, Style
 from ebooklib import epub
 import chardet
 import cchardet
@@ -20,11 +19,14 @@ def get_soup(header, session, url):
     content = response.content
     chardet_encoding = chardet.detect(content)['encoding']
     try:
-        response.encoding = response.content.decode(chardet_encoding)
+        if b'charset=gbk' in content:
+            response.encoding = 'gbk'
+        else:
+            response.encoding = response.content.decode(chardet_encoding)
     except UnicodeDecodeError:
-        for encoding in ['utf-8','gbk']:
+        for encoding_type in ['utf-8','gbk']:
             try:
-                response.encoding = cchardet.detect(content)['encoding']
+                response.encoding = cchardet.detect(content)[encoding_type]
             except UnicodeEncodeError:
                 continue
     return BeautifulSoup(response.text, 'html.parser')
@@ -39,7 +41,7 @@ def scrape_metadata(soup):
     translated_description = translate_text(description)
     cover_url = soup.select_one('div img')['src']
     language_code = langid_classify(description)
-    return translated_title, translated_author, translated_description, cover_url, language_code
+    return translated_title, translated_author, translated_description, cover_url, language_code[0]
 
 def scrape_chapter_links(base_url, soup):
     unsorted_links = soup.select('#list dl dd a')
@@ -101,11 +103,14 @@ def get_chapter_content(headers, session, chapter_url):
     content = chapter_response.content
     chardet_encoding = chardet.detect(content)['encoding']
     try:
-        chapter_response.encoding = chapter_response.content.decode(chardet_encoding)
+        if b'charset=gbk' in content:
+            chapter_response.encoding = 'gbk'
+        else:
+            chapter_response.encoding = chapter_response.content.decode(chardet_encoding)
     except UnicodeDecodeError:
-        for encoding in ['utf-8','gbk']:
+        for encoding_type in ['utf-8','gbk']:
             try:
-                chapter_response.encoding = cchardet.detect(content)['encoding']
+                chapter_response.encoding = cchardet.detect(content)[encoding_type]
             except UnicodeEncodeError:
                 continue
     chapter_soup =  BeautifulSoup(chapter_response.text, 'html.parser')
@@ -117,7 +122,7 @@ def get_chapter_content(headers, session, chapter_url):
     return chapter_content_text
 
 # Function to scrape the document content and create the EPUB book
-def scrape_document(url):
+def scrape_document(directory, url):
     def split_url(url, separator, position=int):
         base_url = url.split(separator)
         return separator.join(base_url[:position]), separator.join(base_url[position:])
@@ -132,10 +137,10 @@ def scrape_document(url):
     session = Session()
     soup = get_soup(headers, session, url)
     title, author, description, cover_url, language_code = scrape_metadata(soup)
-    logger.debug(f'Title: {title}')
-    logger.debug(f'Author: {author}')
-    logger.debug(f'Description: {description}')
-    logger.debug(f'Cover URL: {cover_url}')
+    logger.info(f'Title: {title}')
+    logger.info(f'Author: {author}')
+    logger.info(f'Description: {description}')
+    logger.info(f'Cover URL: {cover_url}')
     
     book = epub.EpubBook()
     book.set_title(title)
@@ -144,15 +149,15 @@ def scrape_document(url):
     book.set_language(language_code)
     
     
-    book.set_cover("cover.jpg", session.get(cover_url).content)
+    book.set_cover("images/cover.jpg", session.get(cover_url).content)
 
     base_url = split_url(url, '/', 3)[0]
     chapter_links = scrape_chapter_links(base_url, soup)
 
     spine = []
-    toc = []
+    toc = ["nav"]
 
-    titlepage_html = f'<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" epub:prefix="z3998: http://www.daisy.org/z3998/2012/vocab/structure/#" lang="en" xml:lang="en"><head><title>{novel_title}</title><link rel="stylesheet" href="stylesheet.css" type="text/css" /><meta charset = "utf-8"/></head><div epub:type="frontmatter"><body><div class="title">{novel_title}</div><div>This ebook is compiled for educational purposes only and is not to be redistributed.</div><div>Title: {novel_title}</div><div>Author: {novel_author}</div><div class="cover"><h1 id="titlepage">{novel_title}</h1><h2>by {novel_author}</h2><img src="images/cover.jpg"></img></div></body></div></html>'
+    titlepage_html = f'<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" epub:prefix="z3998: http://www.daisy.org/z3998/2012/vocab/structure/#" lang="en" xml:lang="en"><head><title>{title}</title><link rel="stylesheet" href="stylesheet.css" type="text/css" /><meta charset = "utf-8"/></head><div epub:type="frontmatter"><body><div class="title">{title}</div><div>This ebook is compiled for educational purposes only and is not to be redistributed.</div><div>Title: {title}</div><div>Author: {author}</div><div class="cover"><h1 id="titlepage">{title}</h1><h2>by {author}</h2><img src="images/cover.jpg"></img></div></body></div></html>'
 
     ## set title page
     title_page = book.add_item(epub.EpubItem(
@@ -161,8 +166,8 @@ def scrape_document(url):
         ,content=titlepage_html
         ,media_type="application/xhtml+xml"))
 
-    spine.append("title_page")
-    toc.append("title_page")
+    spine.append(title_page)
+    toc.append(title_page)
     
     for i, (chapter_title, chapter_url) in enumerate(chapter_links):
         logger.debug(f'Scraping Chapter {i+1} - {chapter_title}')
@@ -234,11 +239,9 @@ def scrape_document(url):
     book.toc = toc
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
+
+    novel_filename =  sub(r'[^\w]', '_', title).lower()
     
-    epub.write_epub(f'{title}.epub', book)
+    epub.write_epub(f'{directory}{novel_filename}.epub', book)
     
     logger.info('EPUB book created successfully!')
-
-# Example usage
-url = 'https://www.shubaow.net/126_126966/'
-scrape_document(url)
