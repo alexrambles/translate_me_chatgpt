@@ -1,5 +1,5 @@
 # translate_me_chatgpt is a WIP. It's probably broken--I make no promises. I'm constantly updating it. It'll have a version once it's up and running properly!
-Using ChatGPT and google translate to translate scraped webnovels in other languages.
+Using ChatGPT and google translate to translate scraped webnovels in other languages into english (for now).
 
 ## Current State:
 ### Not currently using chatgpt
