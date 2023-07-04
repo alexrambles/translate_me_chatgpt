@@ -51,9 +51,25 @@ def scrape_metadata(soup):
     language_code = langid_classify(description)
     return translated_title, translated_author, translated_description, cover_url, language_code[0]
 
-def scrape_chapter_links(base_url, soup):
+def scrape_chapter_links(base_url, header, session, soup):
     unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
     chapter_links = sorted(unsorted_links, key= lambda link: translate_text(str(link)))
+
+    if soup.select('a.onclick'):
+        not_last_toc_pg = True
+        next_toc_page = base_url + soup.select('a.onclick')[0]['href']
+        soup = get_soup(header, session, next_toc_page)
+        
+        while not_last_toc_pg:
+            unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
+            [chapter_links.append(x) for x in sorted(unsorted_links, key= lambda link: translate_text(str(link)))]
+            
+            if len(soup.select('a.onclick')) == 2:
+                next_toc_page = f"{base_url}{soup.select('a.onclick')[1]['href']}"
+                soup = get_soup(header, session, next_toc_page)
+            else:
+                not_last_toc_pg = False
+
     return [(translate_text(link.text.strip()), base_url + link['href']) for link in chapter_links]
 
 def translate_text(to_be_translated_text):
@@ -64,10 +80,14 @@ def translate_text(to_be_translated_text):
     # Translate each chunk
     for chunk in chunks:
         translated = GoogleTranslator(source='auto', target='en').translate(chunk)
-        translated_chunks.append(translated)
+
+        if translated is None and chunk:
+            translated_chunks.append(chunk)
+        else:
+            translated_chunks.append(translated)
 
     # Join the translated chunks
-    translated_text = ' '.join(translated_chunks)
+    translated_text = ' '.join([x for x in translated_chunks if x])
     if translated_text != '' and translated_text is not None:
         return translated_text
 
@@ -169,7 +189,7 @@ def scrape_document(directory, url):
     book.set_cover("images/cover.jpg", session.get(cover_url).content)
 
     base_url = split_url(url, '/', 3)[0]
-    chapter_links = scrape_chapter_links(base_url, soup)
+    chapter_links = scrape_chapter_links(base_url, headers, session, soup)
 
     spine = []
     toc = ["nav"]
