@@ -27,7 +27,7 @@ def get_soup(header, session, url):
 
     
     try:
-        if b'charset=gbk' in content:
+        if b'charset=gbk' in content or b'charset="gbk"' in content:
             response.encoding = 'gbk'
         else:
             response.encoding = response.content.decode(chardet_encoding)
@@ -41,18 +41,18 @@ def get_soup(header, session, url):
     return BeautifulSoup(response.text, 'html.parser')
 
 def scrape_metadata(soup):
-    title = soup.select_one('#info h1').text.strip()
+    title = soup.select_one('#info h1, .catalog h1').text.strip()
     translated_title = translate_text(title)
-    author = soup.select_one('#info p:nth-of-type(1)').text.strip().split('：')[-1]
+    author = soup.select_one('#info p:nth-of-type(1), .p1').text.strip().split('：')[-1]
     translated_author = translate_text(author)
-    description = soup.select_one('#intro p').text.strip()
+    description = soup.select_one('#intro p, .jj .p2').text.strip()
     translated_description = translate_text(description)
     cover_url = soup.select_one('div img')['src']
     language_code = langid_classify(description)
     return translated_title, translated_author, translated_description, cover_url, language_code[0]
 
 def scrape_chapter_links(base_url, soup):
-    unsorted_links = soup.select('#list dl dd a')
+    unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
     chapter_links = sorted(unsorted_links, key= lambda link: translate_text(str(link)))
     return [(translate_text(link.text.strip()), base_url + link['href']) for link in chapter_links]
 
@@ -122,10 +122,16 @@ def get_chapter_content(headers, session, chapter_url):
     chapter_soup =  BeautifulSoup(chapter_response.text, 'html.parser')
     chapter_content_text = []
     chap_soup_content_list = chapter_soup.select('#content *')
-    
-    for x in chap_soup_content_list:
-        if x.text and x.text.strip():
-            chapter_content_text.append(x.next)
+
+    if not chap_soup_content_list:
+        chap_soup_content_list = [node.strip() for node in chapter_soup.select_one('#nr1').stripped_strings]
+    try:
+        for x in chap_soup_content_list:
+            if x.text and x.text.strip():
+                chapter_content_text.append(x.next)
+    except AttributeError:
+        chapter_content_text = chap_soup_content_list
+        pass
             
     return chapter_content_text
 
@@ -202,9 +208,10 @@ def scrape_document(directory, url):
         translated_contents = []
         if to_be_normalized:
             normalized_content = normalize_text(chapter_content, paragraph_tags= True)
-
-        translated_text = translate_text(normalized_content)
-        
+            translated_text = translate_text(normalized_content)
+        else:
+            translated_text = translate_text(chapter_content)
+            
         if translated_text and translated_text.strip():
             translated_contents.append(f'{translated_text}')
 
