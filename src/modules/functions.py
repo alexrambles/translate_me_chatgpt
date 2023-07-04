@@ -121,10 +121,12 @@ def get_chapter_content(headers, session, chapter_url):
             
     chapter_soup =  BeautifulSoup(chapter_response.text, 'html.parser')
     chapter_content_text = []
-    chap_soup_content_list = chapter_soup.select('#content *')
+    if chapter_soup.select_one('#content *'):
+        chap_soup_content_list = chapter_soup.select('#content *')
 
-    if not chap_soup_content_list:
+    else:
         chap_soup_content_list = [node.strip() for node in chapter_soup.select_one('#nr1').stripped_strings]
+        
     try:
         for x in chap_soup_content_list:
             if x.text and x.text.strip():
