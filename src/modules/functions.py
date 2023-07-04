@@ -1,4 +1,5 @@
 import os
+import logging
 from requests import get, Session
 from re import sub
 from bs4 import BeautifulSoup
@@ -7,10 +8,15 @@ from langid import classify as langid_classify
 from ebooklib import epub
 import chardet
 import cchardet
-import logging
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Constants
+
+CHUNK_SIZE = 500
+
 
 # Function to get the BeautifulSoup object for a given URL
 def get_soup(header, session, url):
@@ -18,6 +24,8 @@ def get_soup(header, session, url):
     response.raise_for_status()
     content = response.content
     chardet_encoding = chardet.detect(content)['encoding']
+
+    
     try:
         if b'charset=gbk' in content:
             response.encoding = 'gbk'
@@ -29,9 +37,9 @@ def get_soup(header, session, url):
                 response.encoding = cchardet.detect(content)[encoding_type]
             except UnicodeEncodeError:
                 continue
+            
     return BeautifulSoup(response.text, 'html.parser')
 
-# Function to scrape the document metadata
 def scrape_metadata(soup):
     title = soup.select_one('#info h1').text.strip()
     translated_title = translate_text(title)
@@ -48,13 +56,10 @@ def scrape_chapter_links(base_url, soup):
     chapter_links = sorted(unsorted_links, key= lambda link: translate_text(str(link)))
     return [(translate_text(link.text.strip()), base_url + link['href']) for link in chapter_links]
 
-# Function to translate text to English
 def translate_text(to_be_translated_text):
     translated_chunks = []
-    chunk_size = 500  # Specify the desired chunk size
-
     # Split the text into chunks
-    chunks = [to_be_translated_text[i:i+chunk_size] for i in range(0, len(to_be_translated_text), chunk_size)]
+    chunks = [to_be_translated_text[i:i+CHUNK_SIZE] for i in range(0, len(to_be_translated_text), CHUNK_SIZE)]
 
     # Translate each chunk
     for chunk in chunks:
@@ -69,26 +74,25 @@ def translate_text(to_be_translated_text):
 def normalize_text(text_to_normalize, paragraph_tags = False):
     normalized_list = []
 
-    if type(text_to_normalize) == list:
+    if isinstance(text_to_normalize, list):
         for text_item in text_to_normalize:
             cleaned_untranslated_text = sub(r'[\r\n\xa0]+', ' ', text_item).strip()
             if cleaned_untranslated_text == 'None' or cleaned_untranslated_text.replace(' ',  '') == '':
                 cleaned_untranslated_text = ''
-            if paragraph_tags and cleaned_untranslated_text != '':
+            if paragraph_tags and cleaned_untranslated_text:
                 normalized_list.append(f'<p>{cleaned_untranslated_text}</p>')
-            elif cleaned_untranslated_text != '':
+            elif cleaned_untranslated_text:
                 normalized_list.append(cleaned_untranslated_text)
     else:
         cleaned_untranslated_text = sub(r'[\r\n\xa0]+', ' ', text_to_normalize).strip()
         if cleaned_untranslated_text == 'None' or cleaned_untranslated_text.replace(' ',  '') == '':
             cleaned_untranslated_text = ''
-        if paragraph_tags and cleaned_untranslated_text != '':
+        if paragraph_tags and cleaned_untranslated_text:
             normalized_list.append(f'<p>{cleaned_untranslated_text}</p>')
-        elif cleaned_untranslated_text != '':
+        elif cleaned_untranslated_text:
             normalized_list.append(cleaned_untranslated_text)
 
     joined_normalized_list = ''.join(normalized_list)
-
     return joined_normalized_list
 
 # Function to save content as an HTML file
@@ -102,6 +106,7 @@ def get_chapter_content(headers, session, chapter_url):
     chapter_response.raise_for_status()
     content = chapter_response.content
     chardet_encoding = chardet.detect(content)['encoding']
+    
     try:
         if b'charset=gbk' in content:
             chapter_response.encoding = 'gbk'
@@ -113,12 +118,15 @@ def get_chapter_content(headers, session, chapter_url):
                 chapter_response.encoding = cchardet.detect(content)[encoding_type]
             except UnicodeEncodeError:
                 continue
+            
     chapter_soup =  BeautifulSoup(chapter_response.text, 'html.parser')
     chapter_content_text = []
     chap_soup_content_list = chapter_soup.select('#content *')
+    
     for x in chap_soup_content_list:
-        if x.text is None or x.text == '':
+        if x.text and x.text.strip():
             chapter_content_text.append(x.next)
+            
     return chapter_content_text
 
 # Function to scrape the document content and create the EPUB book
@@ -134,9 +142,11 @@ def scrape_document(directory, url):
     }
 
     logger.info('Scraping TOC document...')
+    
     session = Session()
     soup = get_soup(headers, session, url)
     title, author, description, cover_url, language_code = scrape_metadata(soup)
+    
     logger.info(f'Title: {title}')
     logger.info(f'Author: {author}')
     logger.info(f'Description: {description}')
@@ -148,7 +158,6 @@ def scrape_document(directory, url):
     book.set_language("en")
     book.set_language(language_code)
     
-    
     book.set_cover("images/cover.jpg", session.get(cover_url).content)
 
     base_url = split_url(url, '/', 3)[0]
@@ -159,12 +168,12 @@ def scrape_document(directory, url):
 
     titlepage_html = f'<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" epub:prefix="z3998: http://www.daisy.org/z3998/2012/vocab/structure/#" lang="en" xml:lang="en"><head><title>{title}</title><link rel="stylesheet" href="stylesheet.css" type="text/css" /><meta charset = "utf-8"/></head><div epub:type="frontmatter"><body><div class="title">{title}</div><div>This ebook is compiled for educational purposes only and is not to be redistributed.</div><div>Title: {title}</div><div>Author: {author}</div><div class="cover"><h1 id="titlepage">{title}</h1><h2>by {author}</h2><img src="images/cover.jpg"></img></div></body></div></html>'
 
-    ## set title page
     title_page = book.add_item(epub.EpubItem(
         uid="title_page"
         ,file_name="titlepage.html"
         ,content=titlepage_html
-        ,media_type="application/xhtml+xml"))
+        ,media_type="application/xhtml+xml"
+        ))
 
     spine.append(title_page)
     toc.append(title_page)
@@ -191,27 +200,18 @@ def scrape_document(directory, url):
         chapter_content = '</p><p>'.join(element_sublist)
             
         translated_contents = []
-
         if to_be_normalized:
             normalized_content = normalize_text(chapter_content, paragraph_tags= True)
 
         translated_text = translate_text(normalized_content)
-        if translated_text != '' and translated_text != 'None' and translated_text is not None:
+        
+        if translated_text and translated_text.strip():
             translated_contents.append(f'{translated_text}')
 
-        html_ized_content = []
+        html_ized_content = " ".join(translated_contents)
 
-        if len(translated_contents) == 1:
-            html_ized_content = translated_contents[0]
-
-        else:
-            for content in translated_contents:
-                html_ized_content.append(content)
-
-        if type(html_ized_content) != 'list':
-            pass
-        else:
-            html_ized_content = " ".join(html_ized_content)
+        if not isinstance(html_ized_content, str):
+            html_ized_content = ''
         
         chapter_html_contents = f'<h1>{chapter_title}</h1>\n<div id=\"{chapter_title}\">{html_ized_content}</p>\n'
         filename = f'chapter{i+1}.html'
@@ -233,8 +233,6 @@ def scrape_document(directory, url):
     
     book.add_item(nav_css)
 
-    spine.append("nav")
-
     book.spine = spine
     book.toc = toc
     book.add_item(epub.EpubNcx())
@@ -244,4 +242,4 @@ def scrape_document(directory, url):
     
     epub.write_epub(f'{directory}{novel_filename}.epub', book)
     
-    logger.info('EPUB book created successfully!')
+    logger.info(f'Saved ebook: {directory}{title}.epub')
