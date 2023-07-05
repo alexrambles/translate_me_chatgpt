@@ -1,6 +1,8 @@
 import os
 import logging
 from requests import get, Session
+from requests.adapters import HTTPAdapter, Retry
+from urllib.error import HTTPError
 from re import sub
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
@@ -17,15 +19,30 @@ logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 500
 
-
 # Function to get the BeautifulSoup object for a given URL
-def get_soup(header, session, url):
-    response = session.get(url, headers=header)
-    response.raise_for_status()
-    content = response.content
-    chardet_encoding = chardet.detect(content)['encoding']
+def get_soup(header, session, url, api_key=None):
+    try_again = True
+    if api_key is not None:
+        payload = {'api_key': api_key, 'url': url}
+        response = session.get('http://api.scraperapi.com', params=payload)
+        response.raise_for_status()
+        content = response.content
+        chardet_encoding = chardet.detect(content)['encoding']
 
-    
+    else:
+        while try_again:
+            try:
+                response = session.get(url, headers=header)
+                response.raise_for_status()
+                content = response.content
+                chardet_encoding = chardet.detect(content)['encoding']
+            except HTTPError:
+                logging.error("Couldn't get response from %s. Retrying...", url)
+                response = session.get(url, headers=header)
+                response.raise_for_status()
+                content = response.content
+                chardet_encoding = chardet.detect(content)['encoding']
+        
     try:
         if b'charset=gbk' in content or b'charset="gbk"' in content:
             response.encoding = 'gbk'
@@ -121,25 +138,9 @@ def save_html(content, filename):
         file.write(content)
 
 # Function to scrape a chapter and return its content
-def get_chapter_content(headers, session, chapter_url):
-    chapter_response = session.get(chapter_url, headers=headers)
-    chapter_response.raise_for_status()
-    content = chapter_response.content
-    chardet_encoding = chardet.detect(content)['encoding']
+def get_chapter_content(headers, session, chapter_url, api_key=None):
+    chapter_soup = get_soup(headers, session, chapter_url, api_key)
     
-    try:
-        if b'charset=gbk' in content:
-            chapter_response.encoding = 'gbk'
-        else:
-            chapter_response.encoding = chapter_response.content.decode(chardet_encoding)
-    except UnicodeDecodeError:
-        for encoding_type in ['utf-8','gbk']:
-            try:
-                chapter_response.encoding = cchardet.detect(content)[encoding_type]
-            except UnicodeEncodeError:
-                continue
-            
-    chapter_soup =  BeautifulSoup(chapter_response.text, 'html.parser')
     chapter_content_text = []
     if chapter_soup.select_one('#content *'):
         chap_soup_content_list = chapter_soup.select('#content *')
@@ -158,20 +159,27 @@ def get_chapter_content(headers, session, chapter_url):
     return chapter_content_text
 
 # Function to scrape the document content and create the EPUB book
-def scrape_document(directory, url):
+def scrape_document(directory, url, api_key=None):
     def split_url(url, separator, position=int):
         base_url = url.split(separator)
         return separator.join(base_url[:position]), separator.join(base_url[position:])
 
     headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.190 Safari/537.36',
-    'Referer': 'https://www.google.com/',
+    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
+    'Referer': 'https://m.shubaow.net/',
+    'Cookie': 'cookie_name=_gid=GA1.2.747077490.1688338600; _gat_gtag_UA_138612137_1=1; _ga_EZXV7Q2T03=GS1.1.1688452989.19.1.1688454163.0.0.0; _ga=GA1.1.1449633129.1684996884',
     'Accept-Language': 'en-US,en;q=0.9,ja-JP;q=0.8,ja;q=0.7',
     }
 
     logger.info('Scraping TOC document...')
     
     session = Session()
+    retries = Retry(
+        total=5,
+        backoff_factor=0.1,
+        status_forcelist=[522]
+    )
+    session.mount('https://', HTTPAdapter(max_retries=5))
     soup = get_soup(headers, session, url)
     title, author, description, cover_url, language_code = scrape_metadata(soup)
     

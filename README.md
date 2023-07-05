@@ -16,6 +16,10 @@ That way the API isn't necessary, and it can stay free.
 - [ ] reduce the calls to whatever translation API is being used... Maybe concatenate with a special divider string, translate, then return before slicing into a new list?
 - [ ] create a queue so you can concurrently scrape and translate websites or scrape one after another.
 - [ ] integrate training feature where you can correct translations
-- [ ] the ability to correct the dictionary (custom dictionary that takes precedence over transator's dict?)
+- [ ] the ability to correct the dictionary (custom dictionary that takes precedence over translator's dict?)
+- [ ] import api key from a txt file in the directory
 
 ## Current Bugs
+
+## Notes:
+    So I want to integrate proxies into the project so that we can change our IP. There is proxy={}, and the api key method for some vpns.

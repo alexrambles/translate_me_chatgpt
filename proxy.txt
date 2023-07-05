@@ -1,0 +1,7 @@
+'http': "username:password@host",
+'https': "username:password@host"
+
+# Your username and password will be your login username and password used on your VPN website.
+# 'host' will come from your VPN provider's website.
+# Notice that there is an '@' sign used to separate password from host. Your username and password shouldn't use that character.
+# If your login info does include an '@' symbol, you should replace '@' with '%40' and ':' with '%3A'
