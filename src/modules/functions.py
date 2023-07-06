@@ -2,6 +2,7 @@ import os
 import logging
 from requests import get, Session
 from requests.adapters import HTTPAdapter, Retry
+from urllib import request
 from urllib.error import HTTPError
 from re import sub
 from bs4 import BeautifulSoup
@@ -36,12 +37,16 @@ def get_soup(header, session, url, api_key=None):
                 response.raise_for_status()
                 content = response.content
                 chardet_encoding = chardet.detect(content)['encoding']
-            except HTTPError:
-                logging.error("Couldn't get response from %s. Retrying...", url)
-                response = session.get(url, headers=header)
-                response.raise_for_status()
-                content = response.content
-                chardet_encoding = chardet.detect(content)['encoding']
+            except:
+                try:
+                    req = request.Request(url)
+                    req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36')
+                    req.add_header('Referer', 'https://www.google.com/')
+                    req.add_header('Accept-Language', 'en-US,en;q=0.9,ja-JP;q=0.8,ja;q=0.7')
+
+                    response = request.urlopen(req).read().decode('gbk')
+                except:
+                    pass
         
     try:
         if b'charset=gbk' in content or b'charset="gbk"' in content:
@@ -165,21 +170,14 @@ def scrape_document(directory, url, api_key=None):
         return separator.join(base_url[:position]), separator.join(base_url[position:])
 
     headers = {
-    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-    'Referer': 'https://m.shubaow.net/',
-    'Cookie': 'cookie_name=_gid=GA1.2.747077490.1688338600; _gat_gtag_UA_138612137_1=1; _ga_EZXV7Q2T03=GS1.1.1688452989.19.1.1688454163.0.0.0; _ga=GA1.1.1449633129.1684996884',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
+    'Referer': 'https://www.google.com/',
     'Accept-Language': 'en-US,en;q=0.9,ja-JP;q=0.8,ja;q=0.7',
     }
 
     logger.info('Scraping TOC document...')
     
     session = Session()
-    retries = Retry(
-        total=5,
-        backoff_factor=0.1,
-        status_forcelist=[522]
-    )
-    session.mount('https://', HTTPAdapter(max_retries=5))
     soup = get_soup(headers, session, url)
     title, author, description, cover_url, language_code = scrape_metadata(soup)
     
