@@ -37,14 +37,17 @@ def get_soup(header, session, url, api_key=None):
                 response.raise_for_status()
                 content = response.content
                 chardet_encoding = chardet.detect(content)['encoding']
+                try_again = False
             except:
                 try:
+                    logging.info("Couldn't use Session--trying to use Request.")
                     req = request.Request(url)
                     req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36')
                     req.add_header('Referer', 'https://www.google.com/')
                     req.add_header('Accept-Language', 'en-US,en;q=0.9,ja-JP;q=0.8,ja;q=0.7')
 
                     response = request.urlopen(req).read().decode('gbk')
+                    try_again = False
                 except:
                     pass
         
@@ -144,7 +147,7 @@ def save_html(content, filename):
 
 # Function to scrape a chapter and return its content
 def get_chapter_content(headers, session, chapter_url, api_key=None):
-    chapter_soup = get_soup(headers, session, chapter_url, api_key)
+    chapter_soup = get_soup(headers, session, chapter_url)
     
     chapter_content_text = []
     if chapter_soup.select_one('#content *'):
