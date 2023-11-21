@@ -64,36 +64,76 @@ def get_soup(header, session, url, api_key=None):
                 continue
             
     return BeautifulSoup(response.text, 'html.parser')
+    
 
-def scrape_metadata(soup):
-    title = soup.select_one('#info h1, .catalog h1').text.strip()
-    translated_title = translate_text(title)
-    author = soup.select_one('#info p:nth-of-type(1), .p1').text.strip().split('：')[-1]
-    translated_author = translate_text(author)
-    description = soup.select_one('#intro p, .jj .p2').text.strip()
-    translated_description = translate_text(description)
-    cover_url = soup.select_one('div img')['src']
-    language_code = langid_classify(description)
-    return translated_title, translated_author, translated_description, cover_url, language_code[0]
+def scrape_metadata(soup, website):
+    if website == 'shubaowb':
+        title = soup.select_one('.title1').text.strip()
+        translated_title = translate_text(title)
+        author = soup.select_one('div.book_box dl dd.dd_box span').text.split('：')[1]
+        translated_author = translate_text(author)
+        description = soup.select_one('.book_about dd').text
+        translated_description = translate_text(description)
+        cover_url = None
+        language_code = langid_classify(description)
+        return translated_title, translated_author, translated_description, cover_url, language_code[0]
+    else:
+        title = soup.select_one('#info h1, .catalog h1').text.strip()
+        translated_title = translate_text(title)
+        author = soup.select_one('#info p:nth-of-type(1), .p1, dd.dd_box span font font').text.strip().split('：')[-1]
+        translated_author = translate_text(author)
+        description = soup.select_one('#intro p, .jj .p2').text.strip()
+        translated_description = translate_text(description)
+        cover_url = soup.select_one('div img')['src']
+        language_code = langid_classify(description)
+        return translated_title, translated_author, translated_description, cover_url, language_code[0]
 
-def scrape_chapter_links(base_url, header, session, soup):
-    unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
-    chapter_links = sorted(unsorted_links, key= lambda link: translate_text(str(link)))
+def scrape_chapter_links(base_url, website, header, session, soup):
+    if website == 'shubaowb':
+        chapter_links = soup.select('div.book_last dl dd a')
 
-    if soup.select('a.onclick'):
-        not_last_toc_pg = True
-        next_toc_page = base_url + soup.select('a.onclick')[0]['href']
+        next_toc_page_class = soup.select_one('div.listpage span.right a')['class']
+
+        if next_toc_page_class == 'disable':
+            not_last_toc_pg = False
+            pass
+        else:
+            next_toc_page = f"{base_url}{soup.select('a.onclick')[1]['href']}"
+            not_last_toc_pg = True
+
         soup = get_soup(header, session, next_toc_page)
         
         while not_last_toc_pg:
-            unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
+            unsorted_links = soup.select('div.book_last dl dd a')
             [chapter_links.append(x) for x in sorted(unsorted_links, key= lambda link: translate_text(str(link)))]
             
-            if len(soup.select('a.onclick')) == 2:
-                next_toc_page = f"{base_url}{soup.select('a.onclick')[1]['href']}"
+            if len(soup.select('div.listpage span.right a.onclick')) == 1:
+                next_toc_page = f"{base_url}{soup.select_one('a.onclick')['href']}"
+                soup = get_soup(header, session, next_toc_page)
+            elif len(soup.select('div.listpage span.right a.onclick')) > 0:
+                next_toc_page = f"{base_url}{soup.select_one('div.listpage span.right a.onclick')['href']}"
                 soup = get_soup(header, session, next_toc_page)
             else:
                 not_last_toc_pg = False
+
+    else:
+        unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
+        chapter_links = sorted(unsorted_links, key= lambda link: translate_text(str(link)))
+
+        if soup.select('a.onclick'):
+            not_last_toc_pg = True
+            next_toc_page = base_url + soup.select('a.onclick')[0]['href']
+            soup = get_soup(header, session, next_toc_page)
+            
+            while not_last_toc_pg:
+                unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
+                [chapter_links.append(x) for x in sorted(unsorted_links, key= lambda link: translate_text(str(link)))]
+                
+                if len(soup.select('a.onclick')) == 2:
+                    next_toc_page = f"{base_url}{soup.select('a.onclick')[1]['href']}"
+                    soup = get_soup(header, session, next_toc_page)
+                else:
+                    not_last_toc_pg = False
 
     return [(translate_text(link.text.strip()), base_url + link['href']) for link in chapter_links]
 
@@ -106,7 +146,7 @@ def translate_text(to_be_translated_text):
     for chunk in chunks:
         translated = GoogleTranslator(source='auto', target='en').translate(chunk)
 
-        if translated is None and chunk:
+        if translated ==None and chunk:
             translated_chunks.append(chunk)
         else:
             translated_chunks.append(translated)
@@ -146,31 +186,46 @@ def save_html(content, filename):
         file.write(content)
 
 # Function to scrape a chapter and return its content
-def get_chapter_content(headers, session, chapter_url, api_key=None):
-    chapter_soup = get_soup(headers, session, chapter_url)
-    
-    chapter_content_text = []
-    if chapter_soup.select_one('#content *'):
-        chap_soup_content_list = chapter_soup.select('#content *')
+def get_chapter_content(headers, website, session, chapter_url, api_key=None):
 
-    else:
-        chap_soup_content_list = [node.strip() for node in chapter_soup.select_one('#nr1').stripped_strings]
-        
-    try:
-        for x in chap_soup_content_list:
-            if x.text and x.text.strip():
-                chapter_content_text.append(x.next)
-    except AttributeError:
-        chapter_content_text = chap_soup_content_list
-        pass
+    if website == 'shubaowb':
+        chapter_soup = get_soup(headers, session, chapter_url)
+    
+        chapter_content_text = []
+        if chapter_soup.select_one('#content *'):
+            chap_soup_content_list = chapter_soup.select('#content *')
+
+        else:
+            chap_soup_content_list = [node.strip() for node in chapter_soup.select_one('#chaptercontent').stripped_strings]
             
-    return chapter_content_text
+        try:
+            for x in chap_soup_content_list:
+                if x.text and x.text.strip():
+                    chapter_content_text.append(x.next)
+        except AttributeError:
+            chapter_content_text = chap_soup_content_list
+            pass
+                
+        return chapter_content_text
+    else:
+        ValueError
 
 # Function to scrape the document content and create the EPUB book
 def scrape_document(directory, url, api_key=None):
     def split_url(url, separator, position=int):
         base_url = url.split(separator)
         return separator.join(base_url[:position]), separator.join(base_url[position:])
+
+    if 'shubaowb' in url:
+        website = 'shubaowb'
+    elif 'zhenhunxiaoshuo' in url:
+        website = 'zhenhunxiaoshuo'
+    elif 'sto.cx' in url:
+        website = 'sto.cx'
+    elif '256wx' in url:
+        website = '256wx'
+    else:
+        website = 'unknown'
 
     headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
@@ -182,7 +237,7 @@ def scrape_document(directory, url, api_key=None):
     
     session = Session()
     soup = get_soup(headers, session, url)
-    title, author, description, cover_url, language_code = scrape_metadata(soup)
+    title, author, description, cover_url, language_code = scrape_metadata(soup,website)
     
     logger.info(f'Title: {title}')
     logger.info(f'Author: {author}')
@@ -194,11 +249,16 @@ def scrape_document(directory, url, api_key=None):
     book.add_author(author)
     book.set_language("en")
     book.set_language(language_code)
-    
-    book.set_cover("images/cover.jpg", session.get(cover_url).content)
+    if description is not None:
+        book.add_metadata('DC','description', description)
+
+    if cover_url is not None:
+        book.set_cover("images/cover.jpg", session.get(cover_url).content)
+    else:
+        pass
 
     base_url = split_url(url, '/', 3)[0]
-    chapter_links = scrape_chapter_links(base_url, headers, session, soup)
+    chapter_links = scrape_chapter_links(base_url, website, headers, session, soup)
 
     spine = []
     toc = ["nav"]
@@ -218,7 +278,7 @@ def scrape_document(directory, url, api_key=None):
     for i, (chapter_title, chapter_url) in enumerate(chapter_links):
         logger.debug(f'Scraping Chapter {i+1} - {chapter_title}')
         
-        chapter_content_list = get_chapter_content(headers, session, chapter_url)
+        chapter_content_list = get_chapter_content(headers, website, session, chapter_url)
 
         element_sublist = []
         to_be_normalized = False

@@ -1,5 +1,4 @@
-# translate_me_chatgpt is a WIP. It's probably broken--I make no promises. I'm constantly updating it. It'll have a version once it's up and running properly!
-Using ChatGPT and google translate to translate scraped webnovels in other languages into english (for now).
+This originally was a scraper that mostly utilized Shubaow, but since Shubaow has since been shut down, I'm diversifying. Also, originally was going to integrate ChatGPT because I found that gave the best translation results. But that feature is being delayed for now in favor of hammering out the kinks of the google translate version.
 
 ## Current State:
 #### Not currently using chatgpt
@@ -8,6 +7,7 @@ Hopefully I can build this in a way that allows users to use either chatGPT or g
 That way the API isn't necessary, and it can stay free.
 - [x] translates text scraped from Shubaow
 - [x] supports both mobile and desktop versions of the site
+- [x] support for other websites is being added.
 - [x] detects character encoding and tries most common substitutes where applicable 
 (gbk for GB2312 is the one I see most often for simplified Chinese characters.)
 
