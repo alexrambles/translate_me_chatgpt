@@ -11,7 +11,6 @@ from langid import classify as langid_classify
 from ebooklib import epub
 import chardet
 import cchardet
-from ..__init__ import shubaowb, sto_cx, twofivesixwx, zhenhunxiaoshuo
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -65,36 +64,45 @@ def get_soup(header, session, url, api_key=None):
                 continue
             
     return BeautifulSoup(response.text, 'html.parser')
+    
 
 def scrape_metadata(soup):
-    title = soup.select_one('#info h1, .catalog h1').text.strip()
+    title = soup.select_one('.title1').text.strip()
     translated_title = translate_text(title)
-    author = soup.select_one('#info p:nth-of-type(1), .p1').text.strip().split('：')[-1]
+    author = soup.select_one('div.book_box dl dd.dd_box span').text.split('：')[1]
     translated_author = translate_text(author)
-    description = soup.select_one('#intro p, .jj .p2').text.strip()
+    description = soup.select_one('.book_about dd').text
     translated_description = translate_text(description)
-    cover_url = soup.select_one('div img')['src']
+    cover_url = None
     language_code = langid_classify(description)
     return translated_title, translated_author, translated_description, cover_url, language_code[0]
 
 def scrape_chapter_links(base_url, header, session, soup):
-    unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
-    chapter_links = sorted(unsorted_links, key= lambda link: translate_text(str(link)))
+    chapter_links = soup.select('div.book_last dl dd a')
 
-    if soup.select('a.onclick'):
+    next_toc_page_class = soup.select_one('div.listpage span.right a')['class']
+
+    if next_toc_page_class == 'disable':
+        not_last_toc_pg = False
+        pass
+    else:
+        next_toc_page = f"{base_url}{soup.select('a.onclick')[1]['href']}"
         not_last_toc_pg = True
-        next_toc_page = base_url + soup.select('a.onclick')[0]['href']
-        soup = get_soup(header, session, next_toc_page)
+
+    soup = get_soup(header, session, next_toc_page)
+    
+    while not_last_toc_pg:
+        unsorted_links = soup.select('div.book_last dl dd a')
+        [chapter_links.append(x) for x in sorted(unsorted_links, key= lambda link: translate_text(str(link)))]
         
-        while not_last_toc_pg:
-            unsorted_links = soup.select('#list dl dd a, ul.p2:nth-of-type(2) li a')
-            [chapter_links.append(x) for x in sorted(unsorted_links, key= lambda link: translate_text(str(link)))]
-            
-            if len(soup.select('a.onclick')) == 2:
-                next_toc_page = f"{base_url}{soup.select('a.onclick')[1]['href']}"
-                soup = get_soup(header, session, next_toc_page)
-            else:
-                not_last_toc_pg = False
+        if len(soup.select('div.listpage span.right a.onclick')) == 1:
+            next_toc_page = f"{base_url}{soup.select_one('a.onclick')['href']}"
+            soup = get_soup(header, session, next_toc_page)
+        elif len(soup.select('div.listpage span.right a.onclick')) > 0:
+            next_toc_page = f"{base_url}{soup.select_one('div.listpage span.right a.onclick')['href']}"
+            soup = get_soup(header, session, next_toc_page)
+        else:
+            not_last_toc_pg = False
 
     return [(translate_text(link.text.strip()), base_url + link['href']) for link in chapter_links]
 
@@ -107,7 +115,7 @@ def translate_text(to_be_translated_text):
     for chunk in chunks:
         translated = GoogleTranslator(source='auto', target='en').translate(chunk)
 
-        if translated is None and chunk:
+        if translated ==None and chunk:
             translated_chunks.append(chunk)
         else:
             translated_chunks.append(translated)
@@ -149,13 +157,13 @@ def save_html(content, filename):
 # Function to scrape a chapter and return its content
 def get_chapter_content(headers, session, chapter_url, api_key=None):
     chapter_soup = get_soup(headers, session, chapter_url)
-    
+
     chapter_content_text = []
     if chapter_soup.select_one('#content *'):
         chap_soup_content_list = chapter_soup.select('#content *')
 
     else:
-        chap_soup_content_list = [node.strip() for node in chapter_soup.select_one('#nr1').stripped_strings]
+        chap_soup_content_list = [node.strip() for node in chapter_soup.select_one('#chaptercontent').stripped_strings]
         
     try:
         for x in chap_soup_content_list:
@@ -195,12 +203,13 @@ def scrape_document(directory, url, api_key=None):
     book.add_author(author)
     book.set_language("en")
     book.set_language(language_code)
-    
     if description is not None:
         book.add_metadata('DC','description', description)
 
     if cover_url is not None:
         book.set_cover("images/cover.jpg", session.get(cover_url).content)
+    else:
+        pass
 
     base_url = split_url(url, '/', 3)[0]
     chapter_links = scrape_chapter_links(base_url, headers, session, soup)
@@ -286,15 +295,3 @@ def scrape_document(directory, url, api_key=None):
     epub.write_epub(f'{directory}{novel_filename}.epub', book)
     
     logger.info(f'Saved ebook: {directory}{title}.epub')
-
-
-def find_source(directory, url):
-    if 'sto.cx' in url:
-        sto_cx.scrape_document(directory, url)
-    elif 'zhenhunxiaoshuo' in url:
-        zhenhunxiaoshuo.scrape_document(directory, url)
-    elif '256wx' in url:
-        twofivesixwx.scrape_document(directory, url)
-    elif 'shubaowb' in url:
-        shubaowb.scrape_document(directory, url)
-        

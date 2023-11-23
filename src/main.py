@@ -1,4 +1,4 @@
-from __init__ import scrape_document
+from __init__ import find_source
 from pathlib import Path
 
 
@@ -11,4 +11,4 @@ if directory != '' and directory[-1] != '/':
 if directory == '':
     directory = Path.home().joinpath('Documents', 'Books')
     
-scrape_document('D:/alexi/Documents/Books/', url)
+find_source('D:/alexi/Documents/Books/', url)
