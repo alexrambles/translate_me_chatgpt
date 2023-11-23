@@ -11,7 +11,10 @@ from langid import classify as langid_classify
 from ebooklib import epub
 import chardet
 import cchardet
-from ..__init__ import shubaowb, sto_cx, twofivesixwx, zhenhunxiaoshuo
+from .sources import sto_cx_functions as sto_cx
+from .sources import shubaowb_functions as shubaowb
+from .sources import zhenhunxiaoshuo_functions as zhenhunxiaoshuo
+from .sources import twofivesixwx_functions as twofivesixwx
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -297,4 +300,6 @@ def find_source(directory, url):
         twofivesixwx.scrape_document(directory, url)
     elif 'shubaowb' in url:
         shubaowb.scrape_document(directory, url)
+    else:
+        scrape_document(directory, url)
         

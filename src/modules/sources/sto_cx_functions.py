@@ -71,8 +71,8 @@ def scrape_metadata(soup):
     translated_title = translate_text(title)
     
     if 'Author:' in translated_title:
-        author, translated_title = translated_title.split('Author:')
-        author = author.strip()
+        translated_title, translated_author = translated_title.split('Author:')
+        translated_author = translated_author.strip()
         translated_title = translated_title.strip()
     else:
         author = soup.select_one('#info p:nth-of-type(1), .p1').text.strip().split('：')[-1]
@@ -82,10 +82,16 @@ def scrape_metadata(soup):
 
 #get chapter links
 def scrape_chapter_links(base_url, header, session, soup):
-    unsorted_links = soup.select('#Page_select option')
+    unsorted_anchors = soup.select('div.paginator a')
+    unsorted_links = []
+    link_text = []
+    for link in unsorted_anchors:
+        if link.get('href'):
+            link_text.append(link.text)
+            unsorted_links.append(link.get('href'))
     chapter_links = sorted(unsorted_links, key= lambda link: translate_text(str(link)))
 
-    return [(translate_text(link.text.strip()), base_url + link['value']) for link in chapter_links]
+    return [(link_text, base_url + link) for link in chapter_links]
 
 #translate text into english. Currently assumes that language is Chinese.
 def translate_text(to_be_translated_text):
@@ -170,28 +176,18 @@ def scrape_document(directory, url, api_key=None):
     
     session = Session()
     soup = get_soup(headers, session, url)
-    title, author, description, cover_url, language_code = scrape_metadata(soup)
+    title, author = scrape_metadata(soup)
     
     logger.info(f'Title: {title}')
     logger.info(f'Author: {author}')
-    logger.info(f'Description: {description}')
-    logger.info(f'Cover URL: {cover_url}')
     
     book = epub.EpubBook()
     book.set_title(title)
     book.add_author(author)
     book.set_language("en")
-    if language_code is not None:
-        book.set_language(language_code)
-    
-    if description is not None:
-        book.add_metadata('DC','description', description)
-
-    if cover_url is not None:
-        book.set_cover("images/cover.jpg", session.get(cover_url).content)
 
     base_url = split_url(url, '/', 3)[0]
-    chapter_links = scrape_chapter_links(base_url, headers, session, soup)
+    current_link = [("1",url)]
 
     spine = []
     toc = ["nav"]
@@ -207,9 +203,13 @@ def scrape_document(directory, url, api_key=None):
 
     spine.append(title_page)
     toc.append(title_page)
+
+    page_num=0
+
+    chapter_url = url
     
-    for i, (chapter_title, chapter_url) in enumerate(chapter_links):
-        logger.debug(f'Scraping Page {i+1} of {len(chapter_links)} - {chapter_title}')
+    while soup.find_all('a', href = True, text = '下壹頁')[0].get('href'):
+        logger.debug(f"Scraping Page {page_num+1} of {soup.find('a', href = True, text = '最末頁').get('href').split('-')[2].split('.')[0]}")
         
         chapter_content_list = get_chapter_content(headers, session, chapter_url)
 
@@ -244,13 +244,13 @@ def scrape_document(directory, url, api_key=None):
         if not isinstance(html_ized_content, str):
             html_ized_content = ''
         
-        chapter_html_contents = f'<h1>{chapter_title}</h1>\n<div id=\"{chapter_title}\">{html_ized_content}</p>\n'
-        filename = f'page{i+1}.html'
+        chapter_html_contents = f'<h1>Page {page_num}</h1>\n<div id=\"{page_num}\">{html_ized_content}</p>\n'
+        filename = f'page{page_num}.html'
         save_html(chapter_html_contents, filename)
         
-        logger.info(f'Saved Page {i+1} as HTML file')
+        logger.info(f'Saved Page {page_num} as HTML file')
         
-        chapter = epub.EpubHtml(title=chapter_title, file_name=filename, lang='en')
+        chapter = epub.EpubHtml(title='Page ' + str(page_num), file_name=filename, lang='en')
         chapter.content = chapter_html_contents
 
         book.add_item(chapter)
@@ -258,6 +258,11 @@ def scrape_document(directory, url, api_key=None):
         toc.append(chapter)
         
         os.remove(filename)
+
+        part_chapter_url = soup.find('a', href = True, text = '下壹頁').get('href')
+        chapter_url = base_url + part_chapter_url
+        get_soup(headers, session, chapter_url)
+        page_num += 1
     
     style = 'BODY {color: white;}'
     nav_css = epub.EpubItem(uid="style_nav", file_name="style/nav.css", media_type="text/css", content=style)
