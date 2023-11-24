@@ -211,7 +211,7 @@ def scrape_document(directory, url, api_key=None):
             to_be_normalized = False
 
             if len(chapter_content_list) == 1:
-                chapter_content = chapter_content_list[0].replace('\r', '').replace('\n', '').split('\u3000\u3000')
+                chapter_content = chapter_content_list[0].replace('\r', '').replace('\n', '').replace('%e5%90%bb', '').split('\u3000\u3000')
 
                 for x in chapter_content:
                     if x != '':
@@ -262,7 +262,7 @@ def scrape_document(directory, url, api_key=None):
         to_be_normalized = False
 
         if len(chapter_content_list) == 1:
-            chapter_content = chapter_content_list[0].replace('\r', '').replace('\n', '').split('\u3000\u3000')
+            chapter_content = chapter_content_list[0].replace('\r', '').replace('\n', '').replace('%e5%90%bb', '').split('\u3000\u3000')
 
             for x in chapter_content:
                 if x != '':
