@@ -144,11 +144,10 @@ def save_html(content, filename):
         file.write(content)
 
 # Function to scrape a chapter and return its content
-def get_chapter_content(headers, session, chapter_url, api_key=None):
-    chapter_soup = get_soup(headers, session, chapter_url)
+def get_chapter_content(soup, api_key=None):
     
     chapter_content_text = []
-    chap_soup_content_list = chapter_soup.select('#BookContent')[0].text
+    chap_soup_content_list = soup.select('#BookContent')[0].text
         
     chapter_content_text = [chap_soup_content_list]
             
@@ -206,38 +205,35 @@ def scrape_document(directory, url, api_key=None):
         while soup.find_all('a', href = True, text = '下壹頁')[0].get('href'):
             logger.debug(f"Scraping Page {page_num} of {soup.find('a', href = True, text = '最末頁').get('href').split('-')[2].split('.')[0]}")
             
-            chapter_content_list = get_chapter_content(headers, session, chapter_url)
+            chapter_content_list = get_chapter_content(soup, chapter_url)
 
             element_sublist = []
             to_be_normalized = False
-            
-            for x in chapter_content_list:
-                to_be_normalized = True
-                text_split_by_return = sub('\r', '', sub('\n', '', x)).split('\u3000\u3000')
-                
-                for text_item in text_split_by_return:
-                    element_sublist.append(f"{text_item}")
 
-            element_sublist[:] = [x for x in element_sublist if x != '' and x != '\n' and x != '\r']
+            if len(chapter_content_list) == 1:
+                chapter_content = chapter_content_list[0].replace('\r', '').replace('\n', '').split('\u3000\u3000')
+
+                for x in chapter_content:
+                    if x != '':
+                        element_sublist.append(translate_text(x))
+                    
+                ##for text_item in text_split_by_return:
+                    ##element_sublist.append(f"{text_item}")
+
+            ##element_sublist[:] = [x for x in element_sublist if x != '']
 
             chapter_content = '</p><p>'.join(element_sublist)
                 
             translated_contents = []
-            if to_be_normalized:
-                normalized_content = normalize_text(chapter_content, paragraph_tags= True)
-                translated_text = translate_text(normalized_content)
-            else:
-                translated_text = translate_text(chapter_content)
+            ###normalized_content = normalize_text(chapter_content, paragraph_tags= True)
                 
-            if translated_text and translated_text.strip():
-                translated_contents.append(f'{translated_text}')
 
-            html_ized_content = " ".join(translated_contents)
+            ##html_ized_content = " ".join(translated_contents)
 
-            if not isinstance(html_ized_content, str):
+            if not isinstance(chapter_content, str):
                 html_ized_content = ''
             
-            chapter_html_contents = f'<h1>Page {page_num}</h1>\n<div id=\"{page_num}\">{html_ized_content}</p>\n'
+            chapter_html_contents = f'<h1>Page {page_num}</h1>\n<div id=\"{page_num}\">{chapter_content}</p>\n'
             filename = f'page{page_num}.html'
             save_html(chapter_html_contents, filename)
             
@@ -255,8 +251,62 @@ def scrape_document(directory, url, api_key=None):
             part_chapter_url = soup.find('a', href = True, text = '下壹頁').get('href')
             chapter_url = base_url + part_chapter_url
             page_num += 1
+
+            soup = get_soup(headers, session, chapter_url)
     except:
-        print('Done scraping')
+        logger.debug(f"Scraping Page {page_num} of {soup.find('a', href = True, text = '最末頁').get('href').split('-')[2].split('.')[0]}")
+            
+        chapter_content_list = get_chapter_content(soup, chapter_url)
+
+        element_sublist = []
+        to_be_normalized = False
+
+        if len(chapter_content_list) == 1:
+            chapter_content = chapter_content_list[0].replace('\r', '').replace('\n', '').split('\u3000\u3000')
+
+            for x in chapter_content:
+                if x != '':
+                    element_sublist.append(translate_text(x))
+                
+            ##for text_item in text_split_by_return:
+                ##element_sublist.append(f"{text_item}")
+
+        ##element_sublist[:] = [x for x in element_sublist if x != '']
+
+        chapter_content = '</p><p>'.join(element_sublist)
+            
+        translated_contents = []
+        ###normalized_content = normalize_text(chapter_content, paragraph_tags= True)
+            
+
+        ##html_ized_content = " ".join(translated_contents)
+
+        if not isinstance(chapter_content, str):
+            html_ized_content = ''
+        
+        chapter_html_contents = f'<h1>Page {page_num}</h1>\n<div id=\"{page_num}\">{chapter_content}</p>\n'
+        filename = f'page{page_num}.html'
+        save_html(chapter_html_contents, filename)
+        
+        logger.info(f"Saved Page {page_num} of {soup.find('a', href = True, text = '最末頁').get('href').split('-')[2].split('.')[0]} as HTML file")
+        
+        chapter = epub.EpubHtml(title='Page ' + str(page_num), file_name=filename, lang='en')
+        chapter.content = chapter_html_contents
+
+        book.add_item(chapter)
+        spine.append(chapter)
+        toc.append(chapter)
+        
+        os.remove(filename)
+
+        part_chapter_url = soup.find('a', href = True, text = '下壹頁').get('href')
+        chapter_url = base_url + part_chapter_url
+        page_num += 1
+
+        soup = get_soup(headers, session, chapter_url)
+        
+        logger.debug('Done scraping')
+        
         pass
     
     style = 'BODY {color: white;}'
