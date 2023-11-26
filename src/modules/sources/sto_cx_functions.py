@@ -85,10 +85,12 @@ def scrape_chapter_links(base_url, header, session, soup):
     unsorted_anchors = soup.select('div.paginator a')
     unsorted_links = []
     link_text = []
+    
     for link in unsorted_anchors:
         if link.get('href'):
             link_text.append(link.text)
             unsorted_links.append(link.get('href'))
+            
     chapter_links = sorted(unsorted_links, key= lambda link: translate_text(str(link)))
 
     return [(link_text, base_url + link) for link in chapter_links]
@@ -159,12 +161,17 @@ def scrape_document(directory, url, api_key=None):
         base_url = url.split(separator)
         return separator.join(base_url[:position]), separator.join(base_url[position:])
 
+    spine = []
+    toc = ["nav"]
     headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
     'Referer': 'https://www.google.com/',
     'Accept-Language': 'en-US,en;q=0.9,ja-JP;q=0.8,ja;q=0.7',
     }
-
+    page_num=1
+    
+    style = 'BODY {color: white;}'
+    
     logger.info('Scraping TOC document...')
     
     session = Session()
@@ -182,9 +189,6 @@ def scrape_document(directory, url, api_key=None):
     base_url = split_url(url, '/', 3)[0]
     current_link = [("1",url)]
 
-    spine = []
-    toc = ["nav"]
-
     titlepage_html = f'<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" epub:prefix="z3998: http://www.daisy.org/z3998/2012/vocab/structure/#" lang="en" xml:lang="en"><head><title>{title}</title><link rel="stylesheet" href="stylesheet.css" type="text/css" /><meta charset = "utf-8"/></head><div epub:type="frontmatter"><body><div class="title">{title}</div><div>This ebook is compiled for educational purposes only and is not to be redistributed.</div><div>Title: {title}</div><div>Author: {author}</div><div class="cover"><h1 id="titlepage">{title}</h1><h2>by {author}</h2><img src="images/cover.jpg"></img></div></body></div></html>'
 
     title_page = book.add_item(epub.EpubItem(
@@ -197,18 +201,17 @@ def scrape_document(directory, url, api_key=None):
     spine.append(title_page)
     toc.append(title_page)
 
-    page_num=1
-
     chapter_url = url
 
     try:
         while soup.find_all('a', href = True, text = '下壹頁')[0].get('href'):
             logger.debug(f"Scraping Page {page_num} of {soup.find('a', href = True, text = '最末頁').get('href').split('-')[2].split('.')[0]}")
-            
-            chapter_content_list = get_chapter_content(soup, chapter_url)
 
+            filename = f'page{page_num}.html'
             element_sublist = []
             to_be_normalized = False
+            
+            chapter_content_list = get_chapter_content(soup, chapter_url)
 
             if len(chapter_content_list) == 1:
                 chapter_content = chapter_content_list[0].replace('\r', '').replace('\n', '').replace('%e5%90%bb', '').split('\u3000\u3000')
@@ -216,36 +219,19 @@ def scrape_document(directory, url, api_key=None):
                 for x in chapter_content:
                     if x != '':
                         element_sublist.append(translate_text(x))
-                    
-                ##for text_item in text_split_by_return:
-                    ##element_sublist.append(f"{text_item}")
-
-            ##element_sublist[:] = [x for x in element_sublist if x != '']
 
             chapter_content = '</p><p>'.join(element_sublist)
-                
-            translated_contents = []
-            ###normalized_content = normalize_text(chapter_content, paragraph_tags= True)
-                
-
-            ##html_ized_content = " ".join(translated_contents)
-
-            if not isinstance(chapter_content, str):
-                html_ized_content = ''
-            
             chapter_html_contents = f'<h1>Page {page_num}</h1>\n<div id=\"{page_num}\">{chapter_content}</p>\n'
-            filename = f'page{page_num}.html'
+
             save_html(chapter_html_contents, filename)
             
             logger.info(f"Saved Page {page_num} of {soup.find('a', href = True, text = '最末頁').get('href').split('-')[2].split('.')[0]} as HTML file")
             
             chapter = epub.EpubHtml(title='Page ' + str(page_num), file_name=filename, lang='en')
             chapter.content = chapter_html_contents
-
             book.add_item(chapter)
             spine.append(chapter)
             toc.append(chapter)
-            
             os.remove(filename)
 
             part_chapter_url = soup.find('a', href = True, text = '下壹頁').get('href')
@@ -255,11 +241,11 @@ def scrape_document(directory, url, api_key=None):
             soup = get_soup(headers, session, chapter_url)
     except:
         logger.debug(f"Scraping Page {page_num} of {soup.find('a', href = True, text = '最末頁').get('href').split('-')[2].split('.')[0]}")
-            
-        chapter_content_list = get_chapter_content(soup, chapter_url)
-
+        
         element_sublist = []
-        to_be_normalized = False
+        filename = f'page{page_num}.html'
+                
+        chapter_content_list = get_chapter_content(soup, chapter_url)
 
         if len(chapter_content_list) == 1:
             chapter_content = chapter_content_list[0].replace('\r', '').replace('\n', '').replace('%e5%90%bb', '').split('\u3000\u3000')
@@ -267,36 +253,19 @@ def scrape_document(directory, url, api_key=None):
             for x in chapter_content:
                 if x != '':
                     element_sublist.append(translate_text(x))
-                
-            ##for text_item in text_split_by_return:
-                ##element_sublist.append(f"{text_item}")
-
-        ##element_sublist[:] = [x for x in element_sublist if x != '']
 
         chapter_content = '</p><p>'.join(element_sublist)
-            
-        translated_contents = []
-        ###normalized_content = normalize_text(chapter_content, paragraph_tags= True)
-            
-
-        ##html_ized_content = " ".join(translated_contents)
-
-        if not isinstance(chapter_content, str):
-            html_ized_content = ''
-        
         chapter_html_contents = f'<h1>Page {page_num}</h1>\n<div id=\"{page_num}\">{chapter_content}</p>\n'
-        filename = f'page{page_num}.html'
+
         save_html(chapter_html_contents, filename)
         
-        logger.info(f"Saved Page {page_num} of {soup.find('a', href = True, text = '最末頁').get('href').split('-')[2].split('.')[0]} as HTML file")
+        logger.info(f"Saved Page {page_num} of {page_num} as HTML file")
         
         chapter = epub.EpubHtml(title='Page ' + str(page_num), file_name=filename, lang='en')
         chapter.content = chapter_html_contents
-
         book.add_item(chapter)
         spine.append(chapter)
         toc.append(chapter)
-        
         os.remove(filename)
 
         part_chapter_url = soup.find('a', href = True, text = '下壹頁').get('href')
@@ -306,14 +275,11 @@ def scrape_document(directory, url, api_key=None):
         soup = get_soup(headers, session, chapter_url)
         
         logger.debug('Done scraping')
-        
         pass
     
-    style = 'BODY {color: white;}'
     nav_css = epub.EpubItem(uid="style_nav", file_name="style/nav.css", media_type="text/css", content=style)
     
     book.add_item(nav_css)
-
     book.spine = spine
     book.toc = toc
     book.add_item(epub.EpubNcx())
